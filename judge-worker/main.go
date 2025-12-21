@@ -22,12 +22,18 @@ type Job struct {
 var ctx = context.Background()
 
 func main() {
+	db := initDB()
+	defer db.Close()
+	createSchema(db)
+
 	redisAddr := getEnv("REDIS_ADDR", "localhost:6379")
-	queueName := getEnv("QUEUE_NAME", "submissions")
+	queueName := getEnv("QUEUE_NAME", "validation")
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr: redisAddr,
 	})
+
+	defer rdb.Close()
 
 	startHTTPProducer(rdb)
 
@@ -47,29 +53,73 @@ func main() {
 			log.Println("Error unmarshalling job", err)
 			continue
 		}
-
+		var job_result *ResultEvent
 		if job.Tier == "premium" {
-			processPremiumJob(job)
+			job_result = processPremiumJob(job)
 		} else {
-			processFreeJob(job)
+			job_result = processFreeJob(job)
 		}
+
+		go func(res *ResultEvent) {
+			if err := publishToRedisStream(rdb, res); err != nil {
+				log.Println("publish failed", err)
+			}
+		}(job_result)
 	}
 }
 
-func processFreeJob(job Job) {
+func processFreeJob(job Job) *ResultEvent {
 	var duration time.Duration
 	log.Println("Processing job: ", job)
 	duration = time.Duration(5+rand.IntN(3)) * time.Second
 	time.Sleep(duration)
+
+	result := createResultEvent(job, int(duration))
+
 	log.Println("Completed job")
+	return result
 }
 
-func processPremiumJob(job Job) {
+func processPremiumJob(job Job) *ResultEvent {
 	var duration time.Duration
 	log.Println("Processing job: ", job)
 	duration = time.Duration(3+rand.IntN(2)) * time.Second
 	time.Sleep(duration)
+
+	result := createResultEvent(job, int(duration))
+
 	log.Println("Completed job")
+	return result
+}
+
+func createResultEvent(job Job, duration int) *ResultEvent {
+	var resultEvent ResultEvent
+	resultEvent.SubmissionID = job.SubmissionID
+	resultEvent.UserID = job.UserId
+	resultEvent.Language = job.Language
+	resultEvent.Tier = job.Tier
+	resultEvent.ExecutionMs = duration
+	resultEvent.Status = "ACCEPTED"
+	resultEvent.CompletedAt = time.Now()
+	return &resultEvent
+}
+
+func publishToRedisStream(rdb *redis.Client, resultEvent *ResultEvent) error {
+	_, err := rdb.XAdd(ctx, &redis.XAddArgs{
+		Stream: "submission",
+		Values: map[string]interface{}{
+			"submission_id": resultEvent.SubmissionID,
+			"user_id":       resultEvent.UserID,
+			"tier":          resultEvent.Tier,
+			"language":      resultEvent.Language,
+			"execution_ms":  resultEvent.ExecutionMs,
+			"status":        resultEvent.Status,
+			"completed_at":  resultEvent.CompletedAt.Unix(),
+		},
+		ID: "*",
+	}).Result()
+
+	return err
 }
 
 func getEnv(key string, defVal string) string {
@@ -86,7 +136,7 @@ func startHTTPProducer(rdb *redis.Client) {
 		err := json.NewDecoder(r.Body).Decode(&job)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("inavlid request"))
+			w.Write([]byte("invalid request"))
 			return
 		}
 
