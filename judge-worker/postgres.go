@@ -42,7 +42,7 @@ func createSchema(db *sqlx.DB) {
 	db.MustExec(schema)
 }
 
-func insertResultEvent(db *sqlx.DB, r ResultEvent) error {
+func insertResultEvent(db *sqlx.DB, r *ResultEvent) error {
 	query := `INSERT INTO submissions
         (submission_id, user_id, tier, language, execution_ms, status, completed_at)
         VALUES

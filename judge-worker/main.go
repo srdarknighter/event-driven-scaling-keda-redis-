@@ -3,12 +3,17 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -33,15 +38,23 @@ func main() {
 		Addr: redisAddr,
 	})
 
-	defer rdb.Close()
+	err := ensureConsumerGroup(rdb, "submission", "results_group")
+	if err != nil {
+		log.Fatal(err)
+	}
 
+	go func() {
+		consumeRedisStream(rdb, db, "submission", "results_group")
+	}()
+
+	defer rdb.Close()
 	startHTTPProducer(rdb)
 
 	log.Println("Judge worker Started")
 	log.Println("Waiting for jobs on queue", queueName)
 
 	for {
-		result, err := rdb.BRPop(ctx, 0*time.Second, queueName).Result()
+		result, err := rdb.BRPop(ctx, 0*time.Second, "free-submissions", "premium-submissions").Result()
 		if err != nil {
 			log.Println("Redis Error", err)
 			continue
@@ -66,6 +79,93 @@ func main() {
 			}
 		}(job_result)
 	}
+}
+
+func consumeRedisStream(rdb *redis.Client, db *sqlx.DB, stream string, group string) {
+	consumer := fmt.Sprintf("consumer-%s", uuid.New().String())
+	log.Println("Starting consumer:", consumer)
+
+	for {
+		streams, err := rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
+			Group:    group,
+			Consumer: consumer,
+			Streams:  []string{stream, ">"},
+			Count:    10,
+			Block:    5 * time.Second,
+		}).Result()
+
+		if err != nil {
+			if err == redis.Nil {
+				continue
+			}
+			log.Println("XREADGROUP error:", err)
+			time.Sleep(time.Second)
+			continue
+		}
+
+		for _, s := range streams {
+			for _, msg := range s.Messages {
+				processAndAck(rdb, db, stream, group, msg)
+			}
+		}
+	}
+}
+
+func processAndAck(rdb *redis.Client, db *sqlx.DB, stream string, group string, msg redis.XMessage) {
+	event, err := mapToResultEvent(msg.Values)
+	if err != nil {
+		log.Println("Mapping failed:", err)
+		return
+	}
+
+	if err := insertResultEvent(db, &event); err != nil {
+		log.Println("DB insert failed:", err)
+		return
+	}
+
+	if err := rdb.XAck(ctx, stream, group, msg.ID).Err(); err != nil {
+		log.Println("ACK failed:", err)
+	}
+}
+
+func ensureConsumerGroup(rdb *redis.Client, stream string, group string) error {
+	err := rdb.XGroupCreateMkStream(ctx, stream, group, "0").Err()
+
+	if err != nil {
+		if strings.Contains(err.Error(), "BUSYGROUP") {
+			log.Println("Consumer group already exists")
+			return nil
+		}
+		return err
+	}
+
+	log.Println("Consumer group created:", group)
+	return nil
+}
+
+func mapToResultEvent(values map[string]interface{}) (ResultEvent, error) {
+	getStr := func(k string) string {
+		if v, ok := values[k].(string); ok {
+			return v
+		}
+		return ""
+	}
+
+	execMs, _ := strconv.Atoi(getStr("execution_ms"))
+	completedAt, err := time.Parse(time.RFC3339, getStr("completed_at"))
+	if err != nil {
+		completedAt = time.Now()
+	}
+
+	return ResultEvent{
+		SubmissionID: getStr("submission_id"),
+		UserID:       getStr("user_id"),
+		Tier:         getStr("tier"),
+		Language:     getStr("language"),
+		ExecutionMs:  execMs,
+		Status:       getStr("status"),
+		CompletedAt:  completedAt,
+	}, nil
 }
 
 func processFreeJob(job Job) *ResultEvent {
