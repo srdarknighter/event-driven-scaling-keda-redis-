@@ -1,15 +1,18 @@
 package main
 
 import (
+	"encoding/json"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand/v2"
-	"net/http"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -130,7 +133,6 @@ func processAndAck(rdb *redis.Client, db *sqlx.DB, stream string, group string, 
 
 func ensureConsumerGroup(rdb *redis.Client, stream string, group string) error {
 	err := rdb.XGroupCreateMkStream(ctx, stream, group, "0").Err()
-
 	if err != nil {
 		if strings.Contains(err.Error(), "BUSYGROUP") {
 			log.Println("Consumer group already exists")
@@ -138,7 +140,6 @@ func ensureConsumerGroup(rdb *redis.Client, stream string, group string) error {
 		}
 		return err
 	}
-
 	log.Println("Consumer group created:", group)
 	return nil
 }
@@ -150,13 +151,11 @@ func mapToResultEvent(values map[string]interface{}) (ResultEvent, error) {
 		}
 		return ""
 	}
-
 	execMs, _ := strconv.Atoi(getStr("execution_ms"))
 	completedAt, err := time.Parse(time.RFC3339, getStr("completed_at"))
 	if err != nil {
 		completedAt = time.Now()
 	}
-
 	return ResultEvent{
 		SubmissionID: getStr("submission_id"),
 		UserID:       getStr("user_id"),
@@ -218,7 +217,6 @@ func publishToRedisStream(rdb *redis.Client, resultEvent *ResultEvent) error {
 		},
 		ID: "*",
 	}).Result()
-
 	return err
 }
 
@@ -239,17 +237,14 @@ func startHTTPProducer(rdb *redis.Client) {
 			w.Write([]byte("invalid request"))
 			return
 		}
-
 		queueName := "free-submissions"
 		if job.Tier == "premium" {
 			queueName = "premium-submissions"
 		}
-
 		data, _ := json.Marshal(job)
 		rdb.LPush(ctx, queueName, data)
 		w.WriteHeader(http.StatusCreated)
 	})
-
 	log.Println("HTTP Producer running on :8080")
 	go http.ListenAndServe(":8080", nil)
 }
