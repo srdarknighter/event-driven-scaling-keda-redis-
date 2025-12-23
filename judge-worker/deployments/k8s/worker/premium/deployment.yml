@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: leetcode-judge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+      - name: worker
+        image: leetcode-worker:latest
+        imagePullPolicy: Never
+
+        env:
+          - name: REDIS_ADDR
+            value: "redis:6379"
+          - name: QUEUE_NAME
+            value: "premium-submissions"
+          - name: WORKER_TIER
+            value: "premium"
+
+        resources: 
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"

@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: leetcode-judge
+  labels:
+    app: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+      - name: api
+        image: leetcode-api:latest
+        imagePullPolicy: Never
+
+        env:
+          - name: REDIS_ADDR
+            value: "redis:6379"
+        
+        resources:
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+          requests:
+            memory: "128Mi"
+            cpu: "200m"
+        
+        ports:
+        - containerPort: 8080
+          name: http
+        
+        livenessProbe:
+          httpGet:
+            path: /submit
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /submit
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        startupProbe:
+          httpGet:
+            path: /submit
+            port: 8080
+            scheme: HTTP
+          failureThreshold: 30
+          periodSeconds: 5

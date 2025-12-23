@@ -17,15 +17,18 @@ import (
 func main() {
 	ctx := context.Background()
 
+	queueName := getEnv("QUEUE_NAME", "free-submissions")
+	workerTier := getEnv("WORKER_TIER", "free")
+
 	rdb := redis.NewClient(&redis.Options{
 		Addr: getEnv("REDIS_ADDR", "redis:6379"),
 	})
 	defer rdb.Close()
 
-	log.Println("Worker started")
+	log.Printf("Worker started | tier=%s | queue=%s\n", workerTier, queueName)
 
 	for {
-		result, err := rdb.BRPop(ctx, 0, "free-submissions", "premium-submissions").Result()
+		result, err := rdb.BRPop(ctx, 0, queueName).Result()
 		if err != nil {
 			log.Println("Redis error:", err)
 			continue
@@ -38,7 +41,7 @@ func main() {
 		}
 
 		var res *job.ResultEvent
-		if j.Tier == "premium" {
+		if workerTier == "premium" {
 			res = processPremiumJob(j)
 		} else {
 			res = processFreeJob(j)
