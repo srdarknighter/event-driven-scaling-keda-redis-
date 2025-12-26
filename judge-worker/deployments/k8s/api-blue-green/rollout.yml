@@ -1,0 +1,60 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: api-rollout
+  namespace: leetcode-judge
+  labels:
+    app: api
+
+spec:
+  replicas: 2  
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    
+    spec:
+      containers:
+      - name: api
+        image: leetcode-api:v1.0
+        imagePullPolicy: Never
+        
+        env:
+        - name: REDIS_ADDR
+          value: "redis:6379"
+        
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        
+        livenessProbe:
+          httpGet:
+            path: /submit
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        
+        readinessProbe:
+          httpGet:
+            path: /submit
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        
+        ports:
+        - containerPort: 8080
+          name: http    
+  strategy:
+    blueGreen:
+      activeService: api-active
+      previewService: api-preview
+      autoPromotionEnabled: true
+      scaleDownDelaySeconds: 30
