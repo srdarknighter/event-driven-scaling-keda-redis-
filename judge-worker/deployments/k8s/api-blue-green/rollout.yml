@@ -25,7 +25,7 @@ spec:
         
         env:
         - name: REDIS_ADDR
-          value: "redis:6379"
+          value: "redis-svc:6379"
         
         resources:
           requests:
@@ -35,19 +35,19 @@ spec:
             memory: "128Mi"
             cpu: "200m"
         
-        livenessProbe:
-          httpGet:
-            path: /submit
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 10
+        # livenessProbe:
+        #   httpGet:
+        #     path: /submit
+        #     port: 8080
+        #   initialDelaySeconds: 30
+        #   periodSeconds: 10
         
-        readinessProbe:
-          httpGet:
-            path: /submit
-            port: 8080
-          initialDelaySeconds: 15
-          periodSeconds: 5
+        # readinessProbe:
+        #   httpGet:
+        #     path: /submit
+        #     port: 8080
+        #   initialDelaySeconds: 15
+        #   periodSeconds: 5
         
         ports:
         - containerPort: 8080

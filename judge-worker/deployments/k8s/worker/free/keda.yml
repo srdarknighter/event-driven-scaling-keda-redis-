@@ -1,11 +1,11 @@
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: redis-scaledobject
+  name: redis-scaledobject-free
   namespace: leetcode-judge
 spec:
   scaleTargetRef:
-    name: worker
+    name: worker-free
   
   minReplicaCount: 1
   maxReplicaCount: 10
@@ -15,6 +15,6 @@ spec:
   triggers:
   - type: redis
     metadata:
-      address: redis:6379
+      address: redis-svc.leetcode-judge.svc.cluster.local:6379
       listName: free-submissions
       listLength: "7"

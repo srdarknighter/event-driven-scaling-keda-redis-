@@ -15,11 +15,12 @@ spec:
     spec:
       containers:
       - name: results
-        image: leetcode-results:latest
+        image: leetcode-results:v1.0
+        imagePullPolicy: Never
 
         env:
           - name: REDIS_ADDR
-            value: "redis:6379"
+            value: "redis-svc:6379"
           - name: POSTGRES_DSN
             value: "user=postgres password=postgres host=postgres dbname=leetcode sslmode=disable"
 
