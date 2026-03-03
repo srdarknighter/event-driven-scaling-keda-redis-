@@ -35,6 +35,17 @@ services:
     ports:
       - "6380:6379"
 
+  relay: 
+    build:
+      context: ..
+      dockerfile: deployments/docker/Dockerfile.relay
+    environment:
+      - REDIS_ADDR=redis:6379
+      - POSTGRES_DSN=user=postgres password=postgres host=postgres dbname=leetcode sslmode=disable
+    depends_on:
+      - redis
+      - postgres 
+
   postgres:
     image: postgres:16.11-alpine
     environment:

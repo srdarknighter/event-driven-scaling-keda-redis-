@@ -1,37 +1,47 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
+	"judge-worker/internal/job"
+	"judge-worker/internal/postgres"
 	"log"
 	"net/http"
 	"os"
-
-	"judge-worker/internal/job"
-	"judge-worker/internal/redisqueue"
-
-	"github.com/redis/go-redis/v9"
 )
 
-func main() {
-	ctx := context.Background()
-
-	rdb := redis.NewClient(&redis.Options{
-		Addr: getEnv("REDIS_ADDR", "redis:6379"),
-	})
-	defer rdb.Close()
-
-	q := redisqueue.New(rdb, ctx)
+func mian() {
+	db := postgres.New(getEnv("POSTGRES_DSN", "user=postgres password=postgres host=postgres dbname=leetcode sslmode=disable"))
+	defer db.Close()
+	postgres.Migrate(db)
 
 	http.HandleFunc("/submit", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
 		var j job.Job
 		if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("invalid request"))
+			w.Write([]byte("Invalid request body"))
 			return
 		}
-		if err := q.Enqueue(j); err != nil {
-			log.Println("enqueue error:", err)
+
+		if j.SubmissionID == "" || j.UserID == "" || j.Language == "" || j.Tier == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("missing required fields"))
+			return
+		}
+
+		payload, err := json.Marshal(j)
+		if err != nil {
+			log.Println("marshal error:", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if err := postgres.InsertOutboxEntry(db, j, payload); err != nil {
+			log.Println("outboxinsert error:", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}

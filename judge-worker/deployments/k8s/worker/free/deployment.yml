@@ -19,12 +19,16 @@ spec:
         imagePullPolicy: Never
 
         env:
-          - name: REDIS_ADDR
-            value: "redis-svc:6379"
-          - name: QUEUE_NAME
-            value: "free-submissions"
-          - name: WORKER_TIER
-            value: "free"
+        - name: REDIS_ADDR
+          value: "redis-svc:6379"
+        - name: STREAM_NAME
+          value: "free-stream"
+        - name: GROUP_NAME
+          value: "workers-free"
+        - name: WORKER_TIER
+          value: "free"
+        - name: POSTGRES_DSN
+          value: "user=postgres password=postgres host=postgres dbname=leetcode sslmode=disable"
 
         resources: 
           requests:

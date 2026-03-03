@@ -14,3 +14,8 @@ func New(connStr string) *sqlx.DB {
 	}
 	return db
 }
+
+func Migrate(db *sqlx.DB) {
+	db.MustExec(Schema)
+	log.Println("postgres: migrations applied")
+}

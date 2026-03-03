@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
 
 	"judge-worker/internal/postgres"
@@ -30,13 +31,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	consumer := fmt.Sprintf("consumer-%s", uuid.NewString())
-	log.Println("Results consumer started:", consumer)
+	consumerID := fmt.Sprintf("consumer-%s", uuid.NewString())
+	log.Println("Results consumer started:", consumerID)
+
+	drainPending(ctx, rdb, db, consumerID)
 
 	for {
 		streams, err := rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
 			Group:    "results_group",
-			Consumer: consumer,
+			Consumer: consumerID,
 			Streams:  []string{"submission", ">"},
 			Count:    10,
 			Block:    5 * time.Second,
@@ -53,20 +56,57 @@ func main() {
 
 		for _, s := range streams {
 			for _, msg := range s.Messages {
-				ev, err := stream.MapToResultEvent(msg.Values)
-				if err != nil {
-					log.Println("map failed:", err)
-					continue
-				}
-				if err := postgres.InsertResultEvent(db, ev); err != nil {
-					log.Println("DB insert failed:", err)
-					continue
-				}
-				if err := rdb.XAck(ctx, "submission", "results_group", msg.ID).Err(); err != nil {
-					log.Println("ACK failed:", err)
-				}
+				processMessage(ctx, rdb, db, msg, consumerID)
 			}
 		}
+	}
+}
+
+func processMessage(ctx context.Context, rdb *redis.Client, db *sqlx.DB, msg redis.XMessage, consumerID string) {
+	ev, err := stream.MapToResultEvent(msg.Values)
+	if err != nil {
+		log.Printf("msg %s: map failed: %v — acking to discard malformed message", msg.ID, err)
+		xack(ctx, rdb, msg.ID)
+		return
+	}
+
+	if err := postgres.InsertResultEvent(db, ev); err != nil {
+		log.Printf("msg %s: DB insert failed: %v — leaving in PEL", msg.ID, err)
+		return
+	}
+
+	xack(ctx, rdb, msg.ID)
+}
+
+func drainPending(ctx context.Context, rdb *redis.Client, db *sqlx.DB, consumerID string) {
+	log.Println("Draining pending results from previous session...")
+	for {
+		streams, err := rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
+			Group:    "results_group",
+			Consumer: consumerID,
+			Streams:  []string{"submission", "0"},
+			Count:    10,
+			Block:    0,
+		}).Result()
+
+		if err != nil || len(streams) == 0 {
+			break
+		}
+
+		msgs := streams[0].Messages
+		if len(msgs) == 0 {
+			break
+		}
+		for _, msg := range msgs {
+			processMessage(ctx, rdb, db, msg, consumerID)
+		}
+	}
+	log.Println("Pending drain complete")
+}
+
+func xack(ctx context.Context, rdb *redis.Client, id string) {
+	if err := rdb.XAck(ctx, "submission", "results_group", id).Err(); err != nil {
+		log.Printf("XAck failed for msg %s: %v", id, err)
 	}
 }
 
