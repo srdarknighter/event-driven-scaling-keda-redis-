@@ -29,5 +29,7 @@ CREATE TABLE IF NOT EXISTS processed_jobs (
 	submission_id VARCHAR(255) NOT NULL,
 	worker_id     VARCHAR(255) NOT NULL,
 	claimed_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    result_payload JSONB, 
+    result_saved_at TIMESTAMPTZ
 )
 `

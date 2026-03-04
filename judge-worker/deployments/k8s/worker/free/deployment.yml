@@ -13,6 +13,7 @@ spec:
       labels:
         app: worker-free
     spec:
+      terminationGracePeriodSeconds: 120
       containers:
       - name: worker-free
         image: leetcode-worker:v1.0

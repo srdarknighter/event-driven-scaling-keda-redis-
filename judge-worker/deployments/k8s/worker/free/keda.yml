@@ -13,8 +13,9 @@ spec:
   cooldownPeriod: 30
 
   triggers:
-  - type: redis
+  - type: redis-streams
     metadata:
       address: redis-svc.leetcode-judge.svc.cluster.local:6379
-      listName: free-submissions
-      listLength: "7"
+      stream: free-stream
+      consumerGroup: workers-free
+      pendingEntriesCount: "7"

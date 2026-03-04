@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"judge-worker/internal/job"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -26,6 +28,49 @@ func ClaimJob(db *sqlx.DB, submission_id, workerID string) error {
 		return ErrAlreadyClaimed
 	}
 	return nil
+}
+
+func SaveJobResult(db *sqlx.DB, submissionID string, r *job.ResultEvent) error {
+	payload, err := json.Marshal(r)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+	UPDATE processed_jobs
+	SET result_payload = $1, result_saved_at = NOW()
+	WHERE submission_id = $2`,
+		payload, submissionID)
+
+	return err
+}
+
+func GetJobResult(db *sqlx.DB, submissionID string) (*job.ResultEvent, error) {
+	var payload []byte
+
+	err := db.QueryRow(`
+	SELECT result_payload
+	FROM processed_jobs
+	WHERE submission_id = $1`,
+		submissionID).Scan(&payload)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if payload == nil {
+		return nil, nil
+	}
+
+	var r job.ResultEvent
+	if err := json.Unmarshal(payload, &r); err != nil {
+		return nil, err
+	}
+
+	return &r, err
 }
 
 func IsJobProcessed(db *sqlx.DB, submission_id string) (bool, error) {

@@ -144,8 +144,7 @@ func processMessage(ctx context.Context, rdb *redis.Client, db *sqlx.DB, msg red
 
 	if err != nil {
 		if err == postgres.ErrAlreadyClaimed {
-			log.Printf("msg %v: submission %s already claimed, acking to discard", msg.ID, j.SubmissionID)
-			xack(ctx, rdb, streamName, groupName, msg.ID)
+			rescueResult(ctx, rdb, db, j.SubmissionID, msg, streamName, groupName)
 			return
 		}
 		log.Printf("msg %v: claim error: %s leaving in PEL", msg.ID, err)
@@ -164,12 +163,39 @@ func processMessage(ctx context.Context, rdb *redis.Client, db *sqlx.DB, msg red
 		return
 	}
 
+	if err := postgres.SaveJobResult(db, j.SubmissionID, res); err != nil {
+		log.Printf("msg %s: SaveJobResult failed: %v — leaving in PEL", msg.ID, err)
+		return
+	}
+
 	if err := stream.PublishResult(ctx, rdb, res); err != nil {
 		log.Printf("PublishResult failed for msg %s: %v", msg.ID, err)
 	}
 
 	xack(ctx, rdb, streamName, groupName, msg.ID)
 	log.Printf("msg %v: acked, submission %s done", msg.ID, j.SubmissionID)
+}
+
+func rescueResult(ctx context.Context, rdb *redis.Client, db *sqlx.DB, submissionID string, msg redis.XMessage, streamName, groupName string) {
+	res, err := postgres.GetJobResult(db, submissionID)
+	if err != nil {
+		log.Printf("msg %s: GetJobResult failed: %v — leaving in PEL", msg.ID, err)
+		return
+	}
+
+	if res == nil {
+		log.Printf("msg %s: submission %s claimed but result not yet stored — discarding", msg.ID, submissionID)
+		xack(ctx, rdb, streamName, groupName, msg.ID)
+		return
+	}
+
+	if err := postgres.InsertResultEvent(db, res); err != nil {
+		log.Printf("msg %s: rescue InsertResultEvent failed: %v — leaving in PEL", msg.ID, err)
+		return
+	}
+
+	xack(ctx, rdb, streamName, groupName, msg.ID)
+	log.Printf("msg %s: rescued, submission %s done", msg.ID, submissionID)
 }
 
 func reaper(ctx context.Context, rdb *redis.Client, db *sqlx.DB, streamName, groupName, consumerID, workerTier string) {
