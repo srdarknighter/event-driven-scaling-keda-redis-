@@ -9,7 +9,7 @@ import (
 	"os"
 )
 
-func mian() {
+func main() {
 	db := postgres.New(getEnv("POSTGRES_DSN", "user=postgres password=postgres host=postgres dbname=leetcode sslmode=disable"))
 	defer db.Close()
 	postgres.Migrate(db)

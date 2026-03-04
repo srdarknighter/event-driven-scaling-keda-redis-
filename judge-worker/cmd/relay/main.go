@@ -30,7 +30,7 @@ func main() {
 	defer rdb.Close()
 
 	for _, s := range []struct{ stream, group string }{
-		{"free-premium", "workers-free"},
+		{"free-stream", "workers-free"},
 		{"premium-stream", "workers-premium"},
 	} {
 		err := rdb.XGroupCreateMkStream(ctx, s.stream, s.group, "0").Err()

@@ -76,9 +76,11 @@ func main() {
 				log.Println("XREADGROUP unblocked by context cancel - shutting down")
 				return
 			}
-		}
-
-		if err == redis.Nil {
+			if err == redis.Nil {
+				continue
+			}
+			log.Println("XREADGROUP error:", err)
+			time.Sleep(time.Second)
 			continue
 		}
 

@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relay
+  namespace: leetcode-judge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: relay
+  template:
+    metadata:
+      labels:
+        app: relay
+    spec:
+      containers:
+      - name: relay
+        image: leetcode-relay:v1.0
+        imagePullPolicy: Never
+        env:
+        - name: REDIS_ADDR
+          value: "redis-svc:6379"
+        - name: POSTGRES_DSN
+          value: "user=postgres password=postgres host=postgres dbname=leetcode sslmode=disable"
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"

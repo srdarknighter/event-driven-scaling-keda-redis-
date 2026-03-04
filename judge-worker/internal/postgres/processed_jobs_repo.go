@@ -24,6 +24,10 @@ func ClaimJob(db *sqlx.DB, submission_id, workerID string) error {
 
 	rows, err := result.RowsAffected()
 
+	if err != nil {
+		return err
+	}
+
 	if rows == 0 {
 		return ErrAlreadyClaimed
 	}
