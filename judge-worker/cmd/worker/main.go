@@ -170,8 +170,13 @@ func processMessage(ctx context.Context, rdb *redis.Client, db *sqlx.DB, msg red
 		return
 	}
 
-	if err := stream.PublishResult(ctx, rdb, res); err != nil {
-		log.Printf("PublishResult failed for msg %s: %v", msg.ID, err)
+	streamErr := stream.PublishResult(ctx, rdb, res)
+	if streamErr != nil {
+		log.Printf("msg %s: stream publish failed: %v — attempting direct DB write", msg.ID, streamErr)
+		if dbErr := postgres.InsertResultEvent(db, res); dbErr != nil {
+			log.Printf("msg %s: direct DB write also failed: %v — leaving in PEL", msg.ID, dbErr)
+			return
+		}
 	}
 
 	xack(ctx, rdb, streamName, groupName, msg.ID)
